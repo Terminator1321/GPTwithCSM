@@ -22,9 +22,35 @@ LinearLayer::LinearLayer(int input_size, int output_size) : weights({static_cast
 
 Tensor LinearLayer::forward(const Tensor &input) const
 {
+    if (input.shape().size() == 2)
+    {
+        const size_t seqLen = input.shape()[0];
+        const size_t inputSize = input.shape()[1];
+
+        if (inputSize != weights.cols())
+        {
+            throw std::invalid_argument("Input must be a 2D tensor whose last dimension matches the layer input size");
+        }
+
+        Tensor output({seqLen, weights.rows()});
+        for (size_t token = 0; token < seqLen; ++token)
+        {
+            for (size_t out = 0; out < weights.rows(); ++out)
+            {
+                double value = bias(out);
+                for (size_t in = 0; in < inputSize; ++in)
+                {
+                    value += input(token, in) * weights(out, in);
+                }
+                output(token, out) = value;
+            }
+        }
+        return output;
+    }
+
     if (input.shape().size() != 1 || input.size() != weights.cols())
     {
-        throw std::invalid_argument("Input must be a 1D tensor matching the layer input size");
+        throw std::invalid_argument("Input must be a 1D tensor matching the layer input size, or a 2D (seqLen, input_size) tensor");
     }
 
     Tensor output({static_cast<size_t>(weights.rows())});
