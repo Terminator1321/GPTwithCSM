@@ -89,14 +89,6 @@ int main()
     }
     cout << endl;
 
-    //=======================================================
-    // GPT forward-pass / generation CLI smoke test
-    //
-    // Weights are randomly initialized (no training loop yet), so the
-    // generated text is expected to be gibberish. This only verifies that
-    // token embedding -> position embedding -> transformer blocks ->
-    // final norm -> LM head -> greedy decoding runs end to end.
-    //=======================================================
     cout << "\n--- GPT CLI test (untrained, random weights) ---" << endl;
 
     const size_t gptEmbedDim = 32;
