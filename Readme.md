@@ -30,8 +30,26 @@ gpt/
   Layers/
     Embedding.hpp / Embedding.cpp  - trainable token embedding table with batch
                                       lookup and gradient-accumulating backward
+    PositionEmbedding.hpp / .cpp   - learned positional embedding table
     Linear.hpp / Linear.cpp        - fully connected layer (forward implemented;
                                       full backward still pending, see below)
+    LayerNorms.hpp / .cpp          - layer normalization (γ, β affine)
+    MultiHeadAttention.hpp / .cpp  - Q/K/V/O projections + scaled dot-product
+                                      attention, split across heads
+    ScaledDotProductAttention.*    - the per-head attention computation
+    MLP.hpp / MLP.cpp              - position-wise feed-forward block (GELU)
+
+  Transformer.hpp / Transformer.cpp - one pre-LN transformer block: LN1 ->
+                                      attention -> residual -> LN2 -> MLP ->
+                                      residual
+
+  GPT.hpp / GPT.cpp                - full model: token + position embedding,
+                                      a stack of transformer blocks, final
+                                      LayerNorm, LM head, greedy `generate()`,
+                                      and `summary()` (see below)
+
+  ModelSummary.hpp / .cpp          - PyTorch/TensorFlow-style architecture
+                                      table printer, called via `GPT::summary()`
 
   TokenizerLayer/
     Tokenizer.hpp / Tokenizer.cpp  - character-level tokenizer: builds a
@@ -42,8 +60,30 @@ gpt/
     RandomWeights.hpp              - lightweight uniform weight sampler
 
 Data/                              - raw text corpora used to build the vocabulary
-main.cpp                           - entry point (currently runs tokenization)
+main.cpp                           - entry point: tokenizes the corpus, builds a
+                                      small GPT, prints its architecture summary,
+                                      then generates text from a prompt
 ```
+
+## Model Summary
+
+`GPT` exposes a `model.summary()`-style method:
+
+```cpp
+GPT gpt(vocabSize, embedDim, maxSeqLen, numHeads, numLayers);
+gpt.summary();
+```
+
+This prints a Unicode box-drawing table (one row per layer, every transformer
+block expanded into its LayerNorm / Attention / Residual / MLP / Residual
+sub-layers) followed by total/trainable/non-trainable parameter counts,
+estimated memory, and the model's hyperparameters. The parameter counts are
+computed directly from the real layer shapes (`Linear` = `out*in + out`,
+`LayerNorm` = `2*dim`, embeddings have no bias, etc.) — not hardcoded — so
+the table stays correct for any `numLayers`/`embedDim`/`numHeads` combination.
+Memory is reported in FP64, matching `Tensor`'s `double`-backed storage.
+`main.cpp` calls this automatically right after constructing its GPT
+instance.
 
 ## Current status
 
@@ -54,17 +94,17 @@ main.cpp                           - entry point (currently runs tokenization)
 | Module | ✅ Done — shared `parameters()` / `train()` / `eval()` / `zero_grad()` |
 | Embedding | ✅ Done — batch lookup, gradient accumulation, no in-layer parameter updates |
 | Linear | ✅ Forward pass only — `dWeight`/`dBias` not yet computed or stored |
-| LayerNorm | ⬜ Not started |
-| Softmax | ⬜ Not started |
+| LayerNorm | ✅ Forward pass only — backward declared but not yet implemented |
+| Softmax | ✅ Done — forward + backward |
+| GELU | ✅ Done — forward + backward |
+| CrossEntropy | ✅ Done — forward + backward |
 | Dropout | ⬜ Not started |
-| GELU | ⬜ Not started |
-| CrossEntropy | ⬜ Not started |
 | Optimizers (SGD, Momentum SGD, Adam, AdamW) | ⬜ Not started |
-| Attention | ⬜ Not started |
-| MultiHeadAttention | ⬜ Not started |
-| FeedForward | ⬜ Not started |
-| TransformerBlock | ⬜ Not started |
-| GPT (full model) | ⬜ Not started |
+| Scaled Dot-Product Attention | ✅ Forward pass only |
+| MultiHeadAttention | ✅ Forward pass only |
+| FeedForward (MLP) | ✅ Forward pass only |
+| TransformerBlock | ✅ Forward pass only — pre-LN residual block |
+| GPT (full model) | ✅ Forward pass + greedy `generate()` + `summary()`; no backward/training yet |
 | Training loop | ⬜ Not started |
 | Tokenizer | ✅ Done — character-level, vocabulary build + save/load |
 
@@ -88,36 +128,36 @@ This project is being built incrementally rather than all at once. Every compone
 - Tensor class with contiguous memory, views, broadcasting, reductions and batched matrix multiplication.
 - Parameter and Module abstractions.
 - Character-level tokenizer with vocabulary save/load.
-- Embedding layer with manual gradient accumulation.
+- Embedding and learned Position Embedding layers with manual gradient accumulation (Embedding) / forward pass (PositionEmbedding).
 - Linear layer forward pass.
+- LayerNorm, Scaled Dot-Product Attention, MultiHeadAttention, and FeedForward (MLP) forward passes.
+- Softmax, GELU, and Cross-Entropy loss, forward and backward.
+- Full pre-LN TransformerBlock and the end-to-end GPT model forward pass, plus greedy `generate()`.
+- A `GPT::summary()` model-architecture printer (see Model Summary above).
 - Xavier and He initialization utilities.
 - Manual memory management and tensor operations without external ML libraries.
 
 ## Currently in progress
 
-- Completing the Linear layer backward pass.
+- Completing backward passes for Linear, LayerNorm, Attention, MultiHeadAttention, FeedForward, and the full TransformerBlock/GPT.
 - Verifying gradient calculations with numerical tests.
-- Building the mathematical foundation for Layer Normalization and the remaining transformer blocks.
+- Building the training loop on top of the now-complete forward pass.
 
 ## Next steps
 
 1. Finish Linear backward propagation.
-2. Implement Layer Normalization (forward and backward).
-3. Add activation functions (GELU) and Softmax.
-4. Implement Cross Entropy loss.
+2. Implement the LayerNorm backward pass.
+3. Implement backward passes for Attention, MultiHeadAttention, and FeedForward.
+4. Wire backward through TransformerBlock and the full GPT model.
 5. Implement optimizers (SGD, Momentum, Adam, AdamW).
-6. Build Self-Attention and Multi-Head Attention.
-7. Implement Feed Forward Network.
-8. Assemble Transformer Blocks.
-9. Build the GPT model.
-10. Add the training loop, checkpointing, inference and text generation.
+6. Add the training loop, checkpointing, and evaluation.
+7. Improve `generate()` (temperature/top-k/top-p sampling, KV caching).
 
 ## Current limitations
 
 - No automatic differentiation engine.
-- Transformer blocks are not implemented yet.
-- No optimizer or training loop.
-- No attention mechanism.
+- Backward pass is incomplete past Embedding/Softmax/GELU/CrossEntropy — the rest of the model (Linear, LayerNorm, Attention, FeedForward, TransformerBlock) is forward-only so far.
+- No optimizer or training loop yet, so weights are never updated — `generate()` currently runs on randomly initialized weights.
 - No mixed precision, CUDA backend or distributed training.
 - Documentation is still expanding alongside development.
 
