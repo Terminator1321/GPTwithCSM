@@ -7,10 +7,18 @@
 #include "gpt/Layers/LayerNorms.hpp"
 #include "gpt/GPT.hpp"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 using namespace std;
 
 int main()
 {
+    #ifdef _WIN32
+        SetConsoleOutputCP(CP_UTF8);
+        SetConsoleCP(CP_UTF8);
+    #endif
     Tokenizer tokenizer{};
     vector<string> files = {
         "data.txt",
@@ -97,6 +105,9 @@ int main()
     const size_t gptNumLayers = 2;
 
     GPT gpt(tokenizer.totalTokens, gptEmbedDim, gptMaxSeqLen, gptNumHeads, gptNumLayers);
+
+    cout << "\n--- Model Summary ---" << endl;
+    gpt.summary();
 
     cout << "Enter a prompt (characters outside the training vocab are skipped): ";
     string prompt;
