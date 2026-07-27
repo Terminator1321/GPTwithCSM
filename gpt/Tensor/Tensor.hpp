@@ -57,6 +57,7 @@ public:
     Tensor reshape(const std::vector<size_t>& new_shape) const;
     Tensor view(const std::vector<size_t>& new_shape) const; 
     Tensor flatten() const;
+    Tensor flatten(size_t startDim, size_t endDim) const;
     Tensor transpose(size_t dim0 = 0, size_t dim1 = 1) const;
     Tensor permute(const std::vector<size_t>& dims) const;
     Tensor slice(size_t axis, size_t start, size_t end) const;
@@ -71,11 +72,17 @@ public:
     static Tensor divide(const Tensor& a, const Tensor& b);
     static Tensor matmul(const Tensor& a, const Tensor& b);
 
+    static std::vector<Tensor> split(const Tensor& tensor, size_t axis, size_t split_size);
+    static Tensor concatenate(const std::vector<Tensor>& tensors, size_t axis);
+    static Tensor stack(const std::vector<Tensor>& tensors, size_t axis = 0);
+
     Tensor sum(std::optional<size_t> axis = std::nullopt) const;
     Tensor mean(std::optional<size_t> axis = std::nullopt) const;
     Tensor variance(std::optional<size_t> axis = std::nullopt) const;
     Tensor max(std::optional<size_t> axis = std::nullopt) const;
     Tensor argmax(std::optional<size_t> axis = std::nullopt) const; 
+
+    Tensor& operator/=(double scalar);
 
     void print() const;
 
