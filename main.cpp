@@ -4,6 +4,7 @@
 #include "gpt/TokenizerLayer/Tokenizer.hpp"
 #include "gpt/Layers/Embedding.hpp"
 #include "gpt/Layers/Linear.hpp"
+#include "gpt/Layers/LayerNorms.hpp"
 
 using namespace std;
 
@@ -35,19 +36,28 @@ int main()
         token_ids.push_back(id);
     }
 
-    const size_t embedding_dim = 16;
+    const size_t embedding_dim = 256;
     Embedding embedding(tokenizer.totalTokens, embedding_dim);
     Tensor embeddings = embedding.forward(token_ids);
 
     cout << "Embedding output shape: [" << embeddings.shape()[0] << ", " << embeddings.shape()[1] << "]" << endl;
 
+    LayerNorms layer_norm(embedding_dim);
+    Tensor normalized_embeddings = layer_norm.forward(embeddings);
+
+    cout << "Normalized embedding sample for token 0: ";
+    for (size_t j = 0; j < min<size_t>(8, embedding_dim); ++j) {
+        cout << normalized_embeddings(0, j) << " ";
+    }
+    cout << endl;
+
     LinearLayer linear(static_cast<int>(embedding_dim), 4);
     Tensor embedding_grads({embeddings.shape()[0], embeddings.shape()[1]});
 
-    for (size_t i = 0; i < embeddings.shape()[0]; ++i) {
+    for (size_t i = 0; i < normalized_embeddings.shape()[0]; ++i) {
         Tensor token_vector({embedding_dim});
         for (size_t j = 0; j < embedding_dim; ++j) {
-            token_vector(j) = embeddings(i, j);
+            token_vector(j) = normalized_embeddings(i, j);
         }
 
         Tensor linear_out = linear.forward(token_vector);
@@ -73,7 +83,7 @@ int main()
 
     cout << "Embedding gradient sample for token 0: ";
     const Tensor& embed_grad_tensor = embedding.parameters()[0]->grad;
-    for (size_t j = 0; j < embedding_dim; ++j) {
+    for (size_t j = 0; j < min<size_t>(8, embedding_dim); ++j) {
         cout << embed_grad_tensor(0, j) << " ";
     }
     cout << endl;

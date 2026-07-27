@@ -2,8 +2,7 @@
 
 #include <stdexcept>
 
-Embedding::Embedding(size_t vocab_size, size_t dim)
-    : weights_(Parameter::xavier({vocab_size, dim}))
+Embedding::Embedding(size_t vocab_size, size_t dim) : weights_(Parameter::xavier({vocab_size, dim}))
 {
 }
 
