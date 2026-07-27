@@ -13,6 +13,7 @@ private:
     size_t vocabSize;
     size_t embedDim;
     size_t maxSeqLen;
+    size_t numHeads;
     size_t numLayers;
 
     Embedding tokenEmbedding;
@@ -32,4 +33,7 @@ public:
 
     Tensor forward(const std::vector<int>& tokens);
     std::vector<int> generate(std::vector<int> tokens, size_t maxNewTokens);
+
+    // Prints a model.summary()-style architecture table for this instance.
+    void summary() const;
 };

@@ -1,9 +1,10 @@
 #include "GPT.hpp"
+#include "ModelSummary.hpp"
 
 #include <algorithm>
 #include <stdexcept>
 
-GPT::GPT(size_t vocabSize, size_t embedDim, size_t maxSeqLen, size_t numHeads, size_t numLayers) : vocabSize(vocabSize),  embedDim(embedDim),  maxSeqLen(maxSeqLen),  numLayers(numLayers),  tokenEmbedding(vocabSize, embedDim),  positionEmbedding(maxSeqLen, embedDim),  finalNorm(embedDim),  lmHead(embedDim, vocabSize)
+GPT::GPT(size_t vocabSize, size_t embedDim, size_t maxSeqLen, size_t numHeads, size_t numLayers) : vocabSize(vocabSize),  embedDim(embedDim),  maxSeqLen(maxSeqLen),  numHeads(numHeads),  numLayers(numLayers),  tokenEmbedding(vocabSize, embedDim),  positionEmbedding(maxSeqLen, embedDim),  finalNorm(embedDim),  lmHead(embedDim, vocabSize)
 {
     blocks.reserve(numLayers);
     for (size_t i = 0; i < numLayers; i++)
@@ -34,6 +35,11 @@ Tensor GPT::forward(const std::vector<int> &tokens)
 
     x = finalNorm.forward(x);
     return lmHead.forward(x);
+}
+
+void GPT::summary() const
+{
+    ModelSummary::print(GPTConfig{vocabSize, embedDim, maxSeqLen, numHeads, numLayers});
 }
 
 std::vector<int> GPT::generate(std::vector<int> tokens, size_t maxNewTokens)
