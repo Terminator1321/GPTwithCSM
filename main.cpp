@@ -1,7 +1,9 @@
-#include<iostream>
-#include<vector>
+#include <iostream>
+#include <vector>
 
-#include "gpt\TokenizerLayer\Tokenizer.hpp"
+#include "gpt/TokenizerLayer/Tokenizer.hpp"
+#include "gpt/Layers/Embedding.hpp"
+#include "gpt/Layers/Linear.hpp"
 
 using namespace std;
 
@@ -21,5 +23,60 @@ int main()
 
     tokenizer.displayTokens();
     tokenizer.SaveTokensToFile("./tokens.txt");
+
+    if (tokenizer.totalTokens == 0) {
+        cerr << "No tokens found for embedding test." << endl;
+        return 1;
+    }
+
+    vector<int> token_ids;
+    token_ids.reserve(tokenizer.totalTokens);
+    for (int id = 0; id < tokenizer.totalTokens; ++id) {
+        token_ids.push_back(id);
+    }
+
+    const size_t embedding_dim = 16;
+    Embedding embedding(tokenizer.totalTokens, embedding_dim);
+    Tensor embeddings = embedding.forward(token_ids);
+
+    cout << "Embedding output shape: [" << embeddings.shape()[0] << ", " << embeddings.shape()[1] << "]" << endl;
+
+    LinearLayer linear(static_cast<int>(embedding_dim), 4);
+    Tensor embedding_grads({embeddings.shape()[0], embeddings.shape()[1]});
+
+    for (size_t i = 0; i < embeddings.shape()[0]; ++i) {
+        Tensor token_vector({embedding_dim});
+        for (size_t j = 0; j < embedding_dim; ++j) {
+            token_vector(j) = embeddings(i, j);
+        }
+
+        Tensor linear_out = linear.forward(token_vector);
+        cout << "Token " << i << " linear output:";
+        for (size_t j = 0; j < linear_out.size(); ++j) {
+            cout << " " << linear_out(j);
+        }
+        cout << endl;
+
+        Tensor output_grad({linear_out.size()});
+        for (size_t j = 0; j < linear_out.size(); ++j) {
+            output_grad(j) = 2.0 * linear_out(j);
+        }
+
+        Tensor token_grad = linear.backward(output_grad);
+        for (size_t j = 0; j < embedding_dim; ++j) {
+            embedding_grads(i, j) = token_grad(j);
+        }
+    }
+
+    embedding.zero_grad();
+    embedding.backward(token_ids, embedding_grads);
+
+    cout << "Embedding gradient sample for token 0: ";
+    const Tensor& embed_grad_tensor = embedding.parameters()[0]->grad;
+    for (size_t j = 0; j < embedding_dim; ++j) {
+        cout << embed_grad_tensor(0, j) << " ";
+    }
+    cout << endl;
+
     return 0;
 }
