@@ -2,6 +2,7 @@
 #define LINEAR_LAYER_HPP
 
 #include "../Tensor/Tensor.hpp"
+#include "../helper/RandomWeights.hpp"
 
 class LinearLayer {
 public:

@@ -53,7 +53,7 @@ main.cpp                           - entry point (currently runs tokenization)
 | Parameter | ✅ Done — `value` / `grad` / `trainable` |
 | Module | ✅ Done — shared `parameters()` / `train()` / `eval()` / `zero_grad()` |
 | Embedding | ✅ Done — batch lookup, gradient accumulation, no in-layer parameter updates |
-| Linear | ⏳ Forward pass only — `dWeight`/`dBias` not yet computed or stored |
+| Linear | ✅ Forward pass only — `dWeight`/`dBias` not yet computed or stored |
 | LayerNorm | ⬜ Not started |
 | Softmax | ⬜ Not started |
 | Dropout | ⬜ Not started |
