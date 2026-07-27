@@ -5,6 +5,7 @@
 #include "gpt/Layers/Embedding.hpp"
 #include "gpt/Layers/Linear.hpp"
 #include "gpt/Layers/LayerNorms.hpp"
+#include "gpt/GPT.hpp"
 
 using namespace std;
 
@@ -19,7 +20,7 @@ int main()
     };
 
     for(int i = 0; i<files.size();i++){
-        tokenizer.tokenized("./data/"+files[i]);
+        tokenizer.tokenized("./Data/"+files[i]);
     }
 
     tokenizer.displayTokens();
@@ -87,6 +88,52 @@ int main()
         cout << embed_grad_tensor(0, j) << " ";
     }
     cout << endl;
+
+    //=======================================================
+    // GPT forward-pass / generation CLI smoke test
+    //
+    // Weights are randomly initialized (no training loop yet), so the
+    // generated text is expected to be gibberish. This only verifies that
+    // token embedding -> position embedding -> transformer blocks ->
+    // final norm -> LM head -> greedy decoding runs end to end.
+    //=======================================================
+    cout << "\n--- GPT CLI test (untrained, random weights) ---" << endl;
+
+    const size_t gptEmbedDim = 32;
+    const size_t gptMaxSeqLen = 64;
+    const size_t gptNumHeads = 4;
+    const size_t gptNumLayers = 2;
+
+    GPT gpt(tokenizer.totalTokens, gptEmbedDim, gptMaxSeqLen, gptNumHeads, gptNumLayers);
+
+    cout << "Enter a prompt (characters outside the training vocab are skipped): ";
+    string prompt;
+    std::getline(cin, prompt);
+
+    vector<int> promptTokens;
+    for (char c : prompt) {
+        int id = tokenizer.CharToTokenIndex(c);
+        if (id >= 0) promptTokens.push_back(id);
+    }
+
+    if (promptTokens.empty()) {
+        cout << "No recognizable characters in prompt; seeding with token 0 instead." << endl;
+        promptTokens.push_back(0);
+    }
+
+    if (promptTokens.size() > gptMaxSeqLen) {
+        promptTokens.erase(promptTokens.begin(), promptTokens.begin() + (promptTokens.size() - gptMaxSeqLen));
+    }
+
+    const size_t newTokenCount = 40;
+    cout << "Generating " << newTokenCount << " tokens..." << endl;
+    vector<int> output = gpt.generate(promptTokens, newTokenCount);
+
+    cout << "Generated (decoded): \"";
+    for (int id : output) {
+        cout << tokenizer.TokenIndexToChar(id);
+    }
+    cout << "\"" << endl;
 
     return 0;
 }
