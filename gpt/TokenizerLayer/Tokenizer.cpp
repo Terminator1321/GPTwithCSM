@@ -90,7 +90,7 @@ std::vector<char> Tokenizer::LoadTokensFromFile(const std::string& inputFilePath
     return loadedTokens;
 }
 
-int Tokenizer::CharToTokenIndex(char c)
+int Tokenizer::CharToTokenIndex(char c) const
 {
     for (size_t i = 0; i < tokens.size(); i++)
     {

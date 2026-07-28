@@ -25,7 +25,7 @@ public:
 
     std::vector<char> LoadTokensFromFile(const std::string& inputFilePath);
 
-    int CharToTokenIndex(char c);
+    int CharToTokenIndex(char c) const;
 
     char TokenIndexToChar(int index);
 };
