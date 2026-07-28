@@ -91,11 +91,19 @@ main.cpp                           - entry point: tokenizes the corpus, builds a
 
 ## Building
 
-There's no CMake project yet — a single compiler invocation builds the whole thing:
+There's no CMake project yet, but there is a `Makefile` covering both the
+CPU-only build and the optional CUDA build:
 
 ```bash
-g++ -std=c++20 -I. main.cpp gpt/GPT.cpp gpt/Transformer.cpp gpt/ModelSummary.cpp \
-    gpt/Layers/*.cpp gpt/Tensor/*.cpp \
+make          # CPU build (plain g++, no CUDA toolkit needed) -> ./gpt_main
+make cuda     # GPU-accelerated build (needs nvcc)             -> ./gpt_main_cuda
+```
+
+which is equivalent to invoking the compiler directly:
+
+```bash
+g++ -std=c++20 -O2 -I. main.cpp gpt/GPT.cpp gpt/Transformer.cpp gpt/ModelSummary.cpp \
+    gpt/Checkpoint.cpp gpt/Layers/*.cpp gpt/Tensor/Tensor.cpp \
     gpt/NameSpaces/ActivationFunction.cpp gpt/NameSpaces/LOSS.cpp \
     gpt/Optimizers/Adam.cpp gpt/Optimizers/AdamW.cpp \
     gpt/TokenizerLayer/*.cpp \
@@ -103,6 +111,57 @@ g++ -std=c++20 -I. main.cpp gpt/GPT.cpp gpt/Transformer.cpp gpt/ModelSummary.cpp
 ```
 
 Run `./gpt_main` (or `gpt_main.exe` on Windows) from the project root so the relative `./Data/...` paths resolve correctly.
+
+### CUDA backend
+
+`make cuda` builds `gpt_main_cuda`, which offloads the two hottest ops in the
+model onto the GPU:
+
+- **`Tensor::matmul`** — the batched matmul that `ScaledDotProductAttention`
+  uses for `Q @ K^T` and `softmax(scores) @ V`.
+- **`LinearLayer::forward` / `LinearLayer::backward`** — every Q/K/V/O
+  projection, both `MLP` layers (the `4x` expansion is the single biggest
+  matmul per token besides the LM head), and the LM head itself
+  (`embedDim -> vocabSize`).
+
+Everything else (embeddings, LayerNorm, GELU, softmax, cross-entropy, the
+Adam/AdamW update) stays on the CPU — those are all `O(n)` elementwise ops,
+so there's little to gain from a GPU launch there, and keeping them on the
+CPU keeps the code simple and easy to read, per this project's philosophy.
+
+Implementation notes:
+- `gpt/Tensor/TensorCuda.cuh` / `.cu` hold the CUDA kernels and their host
+  wrappers (`cuda_batched_matmul`, `cuda_linear_forward`,
+  `cuda_linear_backward`); everything is guarded behind `#ifdef USE_CUDA`,
+  so the CPU build never sees or links against CUDA at all.
+- `Tensor::matmul` still does its usual view/broadcast bookkeeping on the
+  CPU, then gathers each batch's operands into flat, contiguous buffers
+  before handing them to either the CUDA kernel or the (unchanged) CPU
+  triple loop — so both backends share the exact same gather step and only
+  differ in how the dense `[batch, M, K] @ [batch, K, N]` product itself is
+  computed.
+- Small matmuls skip the GPU and run on the CPU instead
+  (`kCudaMatmulThreshold` / `kCudaLinearThreshold`, both in "total output
+  elements x reduction dim" terms) since the malloc/copy/launch overhead of
+  a single kernel call isn't worth it for a handful of tokens or heads —
+  this matters a lot here because `main.cpp`'s training loop currently runs
+  one sequence at a time (effectively batch size 1), so most individual
+  matmuls are small until you either use a bigger model or add real
+  mini-batching.
+- `weights.grad` / `bias.grad` accumulate across calls until `zero_grad()`
+  runs, so `cuda_linear_backward` seeds the device buffers with whatever is
+  already on the host, adds this call's contribution on the GPU, and copies
+  the accumulated result back — matching the CPU path's `+=` semantics
+  exactly.
+
+Requirements: an NVIDIA GPU + the CUDA toolkit (`nvcc`) on your `PATH`. This
+sandbox doesn't have a GPU or `nvcc` available, so the CUDA target has been
+written and CPU-verified for correctness-preserving behavior (see below) but
+not build-tested end to end — build and run `make cuda && ./gpt_main_cuda`
+on your own CUDA machine, and open an issue/adjust the kernels if your
+toolkit's `nvcc` needs different flags (e.g. an older CUDA release may not
+support `-std=c++20`; drop to `-std=c++17` in the `Makefile`'s `NVCCFLAGS`
+if so).
 
 ## Model Summary
 
@@ -157,7 +216,7 @@ loop.
 | Model checkpointing (save/load) | Not started — no way yet to serialize/restore weights, optimizer state, or hyperparameters |
 | Dropout | Not started |
 | KV cache for `generate()` | Not started — every generation step reruns the full forward pass |
-| CUDA backend | Not started, planned as an optional addition |
+| CUDA backend | Done for the hot path — `Tensor::matmul` (attention) and `LinearLayer` forward/backward run on the GPU behind `make cuda` / `-DUSE_CUDA`, CPU remains the default and the fallback for small matmuls; everything else (embeddings, LayerNorm, GELU, softmax, optimizers) still runs on the CPU |
 | Tokenizer | Done — character-level, vocabulary build + save/load |
 
 ## What's left
