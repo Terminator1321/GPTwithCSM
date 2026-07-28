@@ -5,8 +5,9 @@
 #include "Layers/LayerNorms.hpp"
 #include "Layers/MultiHeadAttention.hpp"
 #include "Layers/MLP.hpp"
+#include "core/Module.hpp"
 
-class TransformerBlock
+class TransformerBlock : public Module
 {
 private:
     LayerNorms ln1;
@@ -16,7 +17,10 @@ private:
 
 public:
     TransformerBlock(size_t embedDim, size_t numHeads);
-    Tensor forward(const Tensor &x);
+    Tensor forward(Tensor &x);
+    Tensor backward(Tensor &gradOutput);
+
+    std::vector<Parameter*> parameters() override;
 };
 
 #endif

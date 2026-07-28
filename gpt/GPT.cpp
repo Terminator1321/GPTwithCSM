@@ -1,5 +1,8 @@
 #include "GPT.hpp"
 #include "ModelSummary.hpp"
+#include "NameSpaces/ActivationFunction.hpp"
+#include "NameSpaces/LOSS.hpp"
+#include "helper/Sampling.hpp"
 
 #include <algorithm>
 #include <stdexcept>
@@ -24,6 +27,8 @@ Tensor GPT::forward(const std::vector<int> &tokens)
         throw std::runtime_error("GPT::forward: sequence length exceeds maxSeqLen");
     }
 
+    lastTokens = tokens;
+
     Tensor tokenEmb = tokenEmbedding.forward(tokens);
     Tensor posEmb = positionEmbedding.forward(tokens.size());
     Tensor x = Tensor::add(tokenEmb, posEmb);
@@ -37,12 +42,84 @@ Tensor GPT::forward(const std::vector<int> &tokens)
     return lmHead.forward(x);
 }
 
+void GPT::backward(const Tensor &dLogits)
+{
+    if (lastTokens.empty())
+    {
+        throw std::runtime_error("GPT::backward: called before forward()");
+    }
+
+    Tensor dX = dLogits.clone();
+    dX = lmHead.backward(dX);
+    dX = finalNorm.backward(dX);
+
+    for (auto it = blocks.rbegin(); it != blocks.rend(); ++it)
+    {
+        dX = it->backward(dX);
+    }
+
+    positionEmbedding.backward(dX);
+    tokenEmbedding.backward(lastTokens, dX);
+}
+
+double GPT::trainOnBatch(const std::vector<int> &tokens, const std::vector<int> &targets)
+{
+    if (tokens.size() != targets.size())
+    {
+        throw std::invalid_argument("GPT::trainOnBatch: tokens and targets must be the same length");
+    }
+
+    Tensor logits = forward(tokens);
+    const size_t seqLen = tokens.size();
+
+    Tensor dLogits({seqLen, vocabSize});
+    double totalLoss = 0.0;
+
+    for (size_t s = 0; s < seqLen; s++)
+    {
+        Tensor row({vocabSize});
+        for (size_t j = 0; j < vocabSize; j++)
+            row(j) = logits(s, j);
+
+        Tensor probs = Activation::softmaxForward(row);
+        totalLoss += Loss::crossEntropyForward(probs, static_cast<size_t>(targets[s]));
+
+        for (size_t j = 0; j < vocabSize; j++)
+            dLogits(s, j) = probs(j);
+        dLogits(s, static_cast<size_t>(targets[s])) -= 1.0;
+    }
+
+    totalLoss /= static_cast<double>(seqLen);
+    dLogits = Tensor::multiply(dLogits, 1.0 / static_cast<double>(seqLen));
+
+    backward(dLogits);
+    return totalLoss;
+}
+
 void GPT::summary() const
 {
     ModelSummary::print(GPTConfig{vocabSize, embedDim, maxSeqLen, numHeads, numLayers});
 }
 
-std::vector<int> GPT::generate(std::vector<int> tokens, size_t maxNewTokens)
+std::vector<Parameter*> GPT::parameters()
+{
+    std::vector<Parameter*> params;
+
+    auto append = [&params](std::vector<Parameter*> sub) {
+        params.insert(params.end(), sub.begin(), sub.end());
+    };
+
+    append(tokenEmbedding.parameters());
+    append(positionEmbedding.parameters());
+    for (auto &block : blocks)
+        append(block.parameters());
+    append(finalNorm.parameters());
+    append(lmHead.parameters());
+
+    return params;
+}
+
+std::vector<int> GPT::generate(std::vector<int> tokens, size_t maxNewTokens, float temperature, int top_k)
 {
     if (tokens.empty())
     {
@@ -60,8 +137,8 @@ std::vector<int> GPT::generate(std::vector<int> tokens, size_t maxNewTokens)
         Tensor logits = forward(context);
         const size_t seqLen = logits.shape()[0];
         Tensor lastLogits = logits.slice(0, seqLen - 1, seqLen).reshape({vocabSize});
-        Tensor best = lastLogits.argmax();
-        int nextToken = static_cast<int>(best(0));
+
+        int nextToken = sampleNextToken(lastLogits, temperature, top_k);
 
         tokens.push_back(nextToken);
     }

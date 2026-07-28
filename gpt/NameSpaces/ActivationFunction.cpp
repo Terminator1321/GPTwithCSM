@@ -42,25 +42,25 @@ namespace Activation
 
     Tensor softmaxBackward(const Tensor &gradOutput, const Tensor &softmaxOutput)
     {
-        const size_t n = gradOutput.size();
-        Tensor gradInput({n});
+        Tensor gradInput(gradOutput.shape());
+        const auto &shape = gradOutput.shape();
+        const size_t lastDim = shape.empty() ? gradOutput.size() : shape.back();
 
-        for (size_t i = 0; i < n; i++)
+        if (lastDim == 0)
+            return gradInput;
+
+        const size_t rows = gradOutput.size() / lastDim;
+
+        for (size_t r = 0; r < rows; r++)
         {
-            double gradient = 0.0;
-            for (size_t j = 0; j < n; j++)
-            {
-                double jacobian;
+            const size_t base = r * lastDim;
 
-                if (i == j)
-                    jacobian = softmaxOutput.at({i}) * (1.0 - softmaxOutput.at({i}));
-                else
-                    jacobian = -softmaxOutput.at({i}) * softmaxOutput.at({j});
+            double dot = 0.0;
+            for (size_t c = 0; c < lastDim; c++)
+                dot += gradOutput(base + c) * softmaxOutput(base + c);
 
-                gradient += gradOutput.at({j}) * jacobian;
-            }
-
-            gradInput.at({i}) = gradient;
+            for (size_t c = 0; c < lastDim; c++)
+                gradInput(base + c) = softmaxOutput(base + c) * (gradOutput(base + c) - dot);
         }
 
         return gradInput;
@@ -90,7 +90,7 @@ namespace Activation
 
         for (size_t i = 0; i < input.size(); i++)
         {
-            double x = input.at({i});
+            double x = input(i);
             double x2 = x * x;
             double cubic = x * x2;
             double inner = sqrt_2_over_pi * (x + 0.044715 * cubic);
@@ -98,7 +98,7 @@ namespace Activation
             double sech2 = 1.0 - tanhValue * tanhValue;
             double derivative = 0.5 * (1.0 + tanhValue) + 0.5 * x * sech2 * sqrt_2_over_pi * (1.0 + 3.0 * 0.044715 * x2);
 
-            gradInput.at({i}) = gradOutput.at({i}) * derivative;
+            gradInput(i) = gradOutput(i) * derivative;
         }
         return gradInput;
     }

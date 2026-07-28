@@ -1,4 +1,4 @@
-#include "Loss.hpp"
+#include "LOSS.hpp"
 
 #include <cmath>
 #include <algorithm>

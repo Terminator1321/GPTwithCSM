@@ -4,8 +4,10 @@
 #include "Linear.hpp"
 #include "ScaledDotProductAttention.hpp"
 #include "../Tensor/Tensor.hpp"
+#include "../core/Module.hpp"
+#include <vector>
 
-class MultiHeadAttention
+class MultiHeadAttention : public Module
 {
     private:
         LinearLayer Wq;
@@ -13,14 +15,19 @@ class MultiHeadAttention
         LinearLayer Wv;
         LinearLayer Wo;
 
-        ScaledDotProductAttention attention;
+        std::vector<ScaledDotProductAttention> heads;
 
         size_t embedDim;
         size_t numHeads;
         size_t headDim;
+        size_t lastSeqLen = 0;
+
     public:
         MultiHeadAttention(size_t embedDim, size_t numHeads);
-        Tensor forward(const Tensor& x);
+        Tensor forward(Tensor &x);
+        Tensor backward(Tensor &gradOutput);
+
+        std::vector<Parameter*> parameters() override;
 };
 
 #endif

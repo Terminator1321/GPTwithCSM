@@ -8,12 +8,18 @@ class Parameter
 public:
     Tensor value;
     Tensor grad;
+    Tensor m;
+    Tensor v;
     bool trainable;
 
     Parameter() : trainable(true) {}
 
     explicit Parameter(Tensor initial_value, bool trainable_ = true)
-        : value(std::move(initial_value)), grad(value.shape()), trainable(trainable_)
+        : value(std::move(initial_value)),
+          grad(value.shape()),
+          m(value.shape()),
+          v(value.shape()),
+          trainable(trainable_)
     {
     }
 

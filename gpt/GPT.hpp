@@ -6,8 +6,9 @@
 #include "Layers/LayerNorms.hpp"
 #include "Layers/Linear.hpp"
 #include "Tensor/Tensor.hpp"
+#include "core/Module.hpp"
 
-class GPT
+class GPT : public Module
 {
 private:
     size_t vocabSize;
@@ -22,6 +23,8 @@ private:
     LayerNorms finalNorm;
     LinearLayer lmHead;
 
+    std::vector<int> lastTokens;
+
 public:
     GPT(
         size_t vocabSize,
@@ -32,8 +35,13 @@ public:
     );
 
     Tensor forward(const std::vector<int>& tokens);
-    std::vector<int> generate(std::vector<int> tokens, size_t maxNewTokens);
 
-    // Prints a model.summary()-style architecture table for this instance.
+    void backward(const Tensor& dLogits);
+    double trainOnBatch(const std::vector<int>& tokens, const std::vector<int>& targets);
+
+    std::vector<int> generate(std::vector<int> tokens, size_t maxNewTokens,
+                               float temperature = 1.0f, int top_k = 0);
+    std::vector<Parameter*> parameters() override;
+
     void summary() const;
 };
