@@ -1,0 +1,1 @@
+g++ -std=c++20 -I. main.cpp gpt/GPT.cpp gpt/Transformer.cpp gpt/ModelSummary.cpp gpt/Layers/*.cpp gpt/Tensor/*.cpp gpt/NameSpaces/ActivationFunction.cpp gpt/NameSpaces/LOSS.cpp gpt/Optimizers/Adam.cpp gpt/Optimizers/AdamW.cpp gpt/TokenizerLayer/*.cpp -o gpt_main
