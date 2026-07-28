@@ -1,4 +1,5 @@
 #include "Tensor.hpp"
+#include "TensorCuda.cuh"
 
 #include <algorithm>
 #include <cmath>
@@ -576,6 +577,19 @@ Tensor Tensor::matmul(const Tensor &a, const Tensor &b)
     size_t batch_count = numel(batch_shape);
     std::vector<size_t> bidx(batch_shape.size(), 0);
 
+    // Gather each batch's A/B matrices into flat, contiguous [batch,M,K] /
+    // [batch,K,N] buffers. This costs O(batch*(M*K + K*N)), always cheaper
+    // than the O(batch*M*K*N) matmul itself, and turns the general
+    // strided/broadcasting case into a plain dense batched GEMM that the
+    // GPU path (and the CPU fallback below) can both consume directly.
+    std::vector<double> A_flat(batch_count * M * K);
+    std::vector<double> B_flat(batch_count * K * N);
+
+    size_t a_row_stride = a.strides_[a.ndim() - 2];
+    size_t a_col_stride = a.strides_[a.ndim() - 1];
+    size_t b_row_stride = b.strides_[b.ndim() - 2];
+    size_t b_col_stride = b.strides_[b.ndim() - 1];
+
     for (size_t bcount = 0; bcount < batch_count; ++bcount)
     {
         size_t rem = bcount;
@@ -587,26 +601,43 @@ Tensor Tensor::matmul(const Tensor &a, const Tensor &b)
         size_t a_batch_off = broadcast_offset(bidx, batch_shape, batch_a, a.strides_, a.offset_);
         size_t b_batch_off = broadcast_offset(bidx, batch_shape, batch_b, b.strides_, b.offset_);
 
-        size_t a_row_stride = a.strides_[a.ndim() - 2];
-        size_t a_col_stride = a.strides_[a.ndim() - 1];
-        size_t b_row_stride = b.strides_[b.ndim() - 2];
-        size_t b_col_stride = b.strides_[b.ndim() - 1];
+        double *A_dst = A_flat.data() + bcount * M * K;
+        for (size_t i = 0; i < M; ++i)
+            for (size_t k = 0; k < K; ++k)
+                A_dst[i * K + k] = (*a.data_)[a_batch_off + i * a_row_stride + k * a_col_stride];
 
+        double *B_dst = B_flat.data() + bcount * K * N;
+        for (size_t k = 0; k < K; ++k)
+            for (size_t j = 0; j < N; ++j)
+                B_dst[k * N + j] = (*b.data_)[b_batch_off + k * b_row_stride + j * b_col_stride];
+    }
+
+#ifdef USE_CUDA
+    // GPU launch/copy overhead only pays off once there's real work to do;
+    // tiny matmuls (a handful of tokens/heads) are faster on the CPU.
+    constexpr size_t kCudaMatmulThreshold = 1u << 16;
+    if (batch_count * M * K * N >= kCudaMatmulThreshold)
+    {
+        cuda_batched_matmul(A_flat.data(), B_flat.data(), out.data().data(),
+                             batch_count, M, K, N);
+        return out;
+    }
+#endif
+
+    std::vector<double> &out_data = out.data();
+    for (size_t bcount = 0; bcount < batch_count; ++bcount)
+    {
+        const double *A_src = A_flat.data() + bcount * M * K;
+        const double *B_src = B_flat.data() + bcount * K * N;
+        double *C_dst = out_data.data() + bcount * M * N;
         for (size_t i = 0; i < M; ++i)
         {
             for (size_t j = 0; j < N; ++j)
             {
                 double sum = 0.0;
                 for (size_t k = 0; k < K; ++k)
-                {
-                    double av = (*a.data_)[a_batch_off + i * a_row_stride + k * a_col_stride];
-                    double bv = (*b.data_)[b_batch_off + k * b_row_stride + j * b_col_stride];
-                    sum += av * bv;
-                }
-                std::vector<size_t> out_idx = bidx;
-                out_idx.push_back(i);
-                out_idx.push_back(j);
-                out.at(out_idx) = sum;
+                    sum += A_src[i * K + k] * B_src[k * N + j];
+                C_dst[i * N + j] = sum;
             }
         }
     }

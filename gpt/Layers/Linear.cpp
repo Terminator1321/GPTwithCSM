@@ -1,7 +1,16 @@
 #include "Linear.hpp"
+#include "../Tensor/TensorCuda.cuh"
 
 #include <stdexcept>
 #include <vector>
+
+namespace
+{
+    // GPU dispatch/copy overhead only pays off on the bigger matmuls (MLP's
+    // 4x expansion, the vocab-sized LM head, ...). Small layers/short
+    // sequences stay on the CPU path, which is faster for tiny work.
+    constexpr size_t kCudaLinearThreshold = 1u << 16;
+}
 
 LinearLayer::LinearLayer(int input_size, int output_size)
     : weights(Tensor::xavier({static_cast<size_t>(output_size), static_cast<size_t>(input_size)})),
@@ -35,6 +44,19 @@ Tensor LinearLayer::forward(Tensor &input)
         }
 
         Tensor output({seqLen, outputSize});
+
+#ifdef USE_CUDA
+        if (seqLen * inputSize * outputSize >= kCudaLinearThreshold)
+        {
+            // input was just cloned into last_input, which clone() always
+            // returns contiguous, so a raw pointer over its data is safe.
+            cuda_linear_forward(last_input.data().data(), weights.value.data().data(),
+                                 bias.value.data().data(), output.data().data(),
+                                 seqLen, inputSize, outputSize);
+            return output;
+        }
+#endif
+
         for (size_t token = 0; token < seqLen; ++token)
         {
             for (size_t out = 0; out < outputSize; ++out)
@@ -86,6 +108,18 @@ Tensor LinearLayer::backward(Tensor &output_gradients)
         }
 
         Tensor input_gradients({seqLen, inputSize});
+
+#ifdef USE_CUDA
+        if (seqLen * inputSize * outputSize >= kCudaLinearThreshold)
+        {
+            Tensor dOut_contig = output_gradients.contiguous();
+            cuda_linear_backward(dOut_contig.data().data(), last_input.data().data(),
+                                  weights.value.data().data(), weights.grad.data().data(),
+                                  bias.grad.data().data(), input_gradients.data().data(),
+                                  seqLen, inputSize, outputSize);
+            return input_gradients;
+        }
+#endif
 
         for (size_t token = 0; token < seqLen; ++token)
         {
