@@ -117,12 +117,12 @@ int main()
         return 1;
     }
 
-    const size_t context_window = 16;
-    const size_t gpt_embed_dim = 16;
-    const size_t gpt_max_seq_len = context_window;
-    const size_t gpt_num_heads = 1;
-    const size_t gpt_num_layers = 1;
-    const int epochs = 20;
+    const size_t context_window = 128;
+    const size_t gpt_embed_dim = 256;
+    const size_t gpt_max_seq_len = 128;
+    const size_t gpt_num_heads = 8;
+    const size_t gpt_num_layers = 8;
+    const int epochs = 1;
 
     std::vector<std::vector<int>> sequences = makeWindowSequences(token_ids, context_window);
     if (sequences.empty())
@@ -131,7 +131,7 @@ int main()
         return 1;
     }
 
-    const size_t training_window_cap = 64;
+    const size_t training_window_cap = 500000;
     std::mt19937 shuffle_rng(42);
     std::shuffle(sequences.begin(), sequences.end(), shuffle_rng);
     if (sequences.size() > training_window_cap)
@@ -150,7 +150,7 @@ int main()
     gpt.summary();
 
     const std::string checkpoint_path = "model.csm";
-    const size_t checkpoint_interval_steps = 10;
+    const size_t checkpoint_interval_steps = 1;
     size_t global_step = 0;
 
     if (loadCheckpoint(checkpoint_path, gpt, global_step, tokenizer.totalTokens, gpt_embed_dim, gpt_max_seq_len, gpt_num_heads, gpt_num_layers))
@@ -158,7 +158,7 @@ int main()
         std::cout << "\nResumed from checkpoint '" << checkpoint_path << "' at step " << global_step << "." << std::endl;
     }
 
-    Adam optimizer(1e-3);
+    Adam optimizer(3e-4);
     std::cout << "\nTraining progress" << std::endl;
     std::cout << "-----------------" << std::endl;
 
